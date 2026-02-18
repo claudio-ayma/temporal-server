@@ -96,6 +96,30 @@ services:
       - TEMPORAL_CORS_ORIGINS=https://${TEMPORAL_UI_DOMAIN}
     networks:
       - temporal-network
+
+  temporal-auth-init:
+    image: httpd:alpine
+    entrypoint: sh
+    command: -c "htpasswd -nbB $${TEMPORAL_UI_USER} $${TEMPORAL_UI_PASSWORD} > /auth/.htpasswd && echo 'Auth file generated for user:' $${TEMPORAL_UI_USER}"
+    environment:
+      - TEMPORAL_UI_USER=${TEMPORAL_UI_USER}
+      - TEMPORAL_UI_PASSWORD=${TEMPORAL_UI_PASSWORD}
+    volumes:
+      - temporal-auth:/auth
+
+  temporal-ui-proxy:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      temporal-ui:
+        condition: service_started
+      temporal-auth-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./deployment/nginx/auth-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+      - temporal-auth:/etc/nginx:ro
+    networks:
+      - temporal-network
       - dokploy-network
     labels:
       traefik.enable: "true"
@@ -103,9 +127,7 @@ services:
       traefik.http.routers.temporal-ui.entrypoints: "websecure"
       traefik.http.routers.temporal-ui.tls: "true"
       traefik.http.routers.temporal-ui.tls.certresolver: "letsencrypt"
-      traefik.http.middlewares.temporal-ui-auth.basicauth.users: "${TEMPORAL_UI_AUTH_USERS}"
-      traefik.http.routers.temporal-ui.middlewares: "temporal-ui-auth"
-      traefik.http.services.temporal-ui.loadbalancer.server.port: "8080"
+      traefik.http.services.temporal-ui.loadbalancer.server.port: "80"
       traefik.docker.network: "dokploy-network"
 
 networks:
@@ -117,3 +139,4 @@ networks:
 
 volumes:
   temporal-postgresql-data:
+  temporal-auth:
