@@ -1,0 +1,51 @@
+# Local override for testing production compose with Traefik + Basic Auth
+# Usage: docker compose -f docker-compose-production.yml -f docker-compose-production.local.yml --env-file .env.production up -d
+#
+# Set TEMPORAL_UI_USER and TEMPORAL_UI_PASSWORD in .env.production (plain text)
+
+services:
+  temporal-auth-init:
+    image: httpd:alpine
+    entrypoint: sh
+    command: -c "htpasswd -nbB $${TEMPORAL_UI_USER} $${TEMPORAL_UI_PASSWORD} > /auth/.htpasswd && echo 'Auth file generated for user:' $${TEMPORAL_UI_USER}"
+    environment:
+      - TEMPORAL_UI_USER=${TEMPORAL_UI_USER}
+      - TEMPORAL_UI_PASSWORD=${TEMPORAL_UI_PASSWORD}
+    volumes:
+      - temporal-auth:/auth
+
+  traefik:
+    image: traefik:v3.3
+    restart: unless-stopped
+    depends_on:
+      temporal-auth-init:
+        condition: service_completed_successfully
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - temporal-auth:/auth:ro
+    networks:
+      - dokploy-network
+
+  temporal-ui:
+    labels:
+      traefik.http.routers.temporal-ui.entrypoints: "web"
+      traefik.http.routers.temporal-ui.tls: "false"
+      traefik.http.routers.temporal-ui.tls.certresolver: ""
+      traefik.http.middlewares.temporal-ui-auth.basicauth.users: ""
+      traefik.http.middlewares.temporal-ui-auth.basicauth.usersfile: "/auth/.htpasswd"
+
+networks:
+  dokploy-network:
+    external: false
+    driver: bridge
+
+volumes:
+  temporal-auth:
