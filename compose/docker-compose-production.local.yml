@@ -2,6 +2,10 @@
 # Usage: docker compose -f docker-compose-production.yml -f docker-compose-production.local.yml --env-file .env.production up -d
 
 services:
+  temporal:
+    ports:
+      - "7233:7233"
+
   temporal-ui-proxy:
     ports:
       - "80:80"
